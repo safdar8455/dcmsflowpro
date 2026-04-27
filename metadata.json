@@ -1,0 +1,6 @@
+{
+  "name": "ClaimFlow - Death Claim Tracker",
+  "description": "A comprehensive application for tracking and managing the death claim process flow, from intimation to final payment, including JV/PV approvals, ZCC/RCC committees, and audit flows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

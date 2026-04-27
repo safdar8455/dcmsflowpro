@@ -1,0 +1,113 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function getUserRole() {
+      let uid = request.auth != null ? request.auth.uid : null;
+      let path = uid != null ? /databases/$(database)/documents/userRoles/$(uid) : null;
+      return (path != null && exists(path)) ? get(path).data.get('role', 'GUEST') : 'GUEST';
+    }
+
+    function isAdmin() {
+      let email = request.auth != null ? request.auth.token.email : null;
+      let uid = request.auth != null ? request.auth.uid : null;
+      let roleDocPath = uid != null ? /databases/$(database)/documents/userRoles/$(uid) : null;
+      
+      return isSignedIn() && (
+        email == 'safderjamali12@gmail.com' ||
+        email == 'safdarse063@gmail.com' ||
+        (roleDocPath != null && exists(roleDocPath) && get(roleDocPath).data.get('role', 'GUEST') == 'ADMIN')
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Entity Validations ---
+
+    function isValidDeathClaim(data) {
+      return data.get('policyNo', '') is string && data.get('policyNo', '').size() <= 50 &&
+             data.get('nameOfAssured', '') is string && data.get('nameOfAssured', '').size() <= 200 &&
+             data.get('currentStage', 'INTIMATION') in [
+               'INTIMATION', 'REQUIREMENT_APPLIED', 'DOCUMENTS_AWAITED', 'CALCULATION', 
+               'JV_APPROVAL', 'DOCUMENTS_COLLECTION', 'ZCC_PROCESSING', 'INVESTIGATION', 
+               'AUDIT_PRE_ZCC', 'RCC_PROCESSING', 'PV_PREPARATION', 'AUDIT_PV', 
+               'ACCOUNTS_FINAL', 'PAID', 'RECORD_ROOM'
+             ] &&
+             (data.get('totalAmount', 0) is number) &&
+             (data.get('netAmount', 0) is number) &&
+             (data.get('bonuses', 0) is number) &&
+             (data.get('intBonus', 0) is number) &&
+             (data.get('millionBonus', 0) is number) &&
+             (data.get('goldenJubileeBonus', 0) is number) &&
+             (data.get('terminalBonus', 0) is number) &&
+             (data.get('fibAmount', 0) is number) &&
+             (data.get('fibPercentage', 0) is number) &&
+             (data.get('fibPeriodYears', 0) is number) &&
+             (data.get('rpAmount', 0) is number);
+    }
+
+    // --- Collections ---
+
+    match /userRoles/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /claims/{claimId} {
+      allow get: if isSignedIn() && isValidId(claimId);
+      allow list: if isSignedIn() && (
+        isAdmin() || 
+        getUserRole() in ['INCHARGE', 'ACCOUNTANT', 'AUDIT', 'ACCOUNTS', 'CLERK', 'FO']
+      );
+
+      allow create: if isSignedIn() && 
+                       isValidId(claimId) && 
+                       isValidDeathClaim(incoming()) &&
+                       incoming().currentStage == 'INTIMATION' &&
+                       (isAdmin() || (
+                         incoming().createdAt is string &&
+                         incoming().updatedAt is string &&
+                         getUserRole() in ['INCHARGE', 'CLERK']
+                       ));
+
+      allow update: if (
+        isSignedIn() && 
+        isValidDeathClaim(incoming()) && (
+          isAdmin() ||
+          (
+            incoming().updatedAt is string &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().policyNo == existing().policyNo &&
+            getUserRole() in ['INCHARGE', 'ACCOUNTANT', 'AUDIT', 'ACCOUNTS', 'CLERK', 'FO']
+          )
+        )
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && getUserRole() in ['INCHARGE', 'CLERK', 'ADMIN']);
+    }
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "DeathClaim": {
+      "title": "Death Claim",
+      "description": "Information about a death claim processing through various stages.",
+      "type": "object",
+      "properties": {
+        "policyNo": { "type": "string" },
+        "claimNo": { "type": "string" },
+        "nameOfAssured": { "type": "string" },
+        "riskDate": { "type": "string", "format": "date" },
+        "dateOfDeath": { "type": "string", "format": "date" },
+        "dateOfIntimation": { "type": "string", "format": "date" },
+        "dueDateLastPayment": { "type": "string", "format": "date" },
+        "mode": { "type": "string", "enum": ["YLY", "HLY", "QLY", "MLY"] },
+        "age": { "type": "integer" },
+        "gender": { "type": "string", "enum": ["M", "NM"] },
+        "ordSp": { "type": "string" },
+        "table": { "type": "string" },
+        "term": { "type": "integer" },
+        "toa": { "type": "string" },
+        "yearOfMaturity": { "type": "integer" },
+        "instPremium": { "type": "number" },
+        "extraPremium": { "type": "number" },
+        "policyStatus": { "type": "string" },
+        "option": { "type": "string" },
+        "earlyCase": { "type": "boolean" },
+        "nd": { "type": "boolean" },
+        "causeOfDeath": { "type": "string" },
+        "causeOfDeathCode": { "type": "string" },
+        "sumAssuredPup": { "type": "number" },
+        "sumAssured": { "type": "number" },
+        "addSA": { "type": "number" },
+        "bonuses": { "type": "number" },
+        "intBonus": { "type": "number" },
+        "millionBonus": { "type": "number" },
+        "goldenJubileeBonus": { "type": "number" },
+        "terminalBonus": { "type": "number" },
+        "annBonus30th": { "type": "number" },
+        "oneTimeBonus": { "type": "number" },
+        "loyaltyBonus": { "type": "number" },
+        "sb": { "type": "number" },
+        "spBonus": { "type": "number" },
+        "suspPreRefund": { "type": "number" },
+        "aibAdb": { "type": "number" },
+        "fibAnn": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "premium": { "type": "number" },
+        "lateFee": { "type": "number" },
+        "loanInt": { "type": "number" },
+        "netAmount": { "type": "number" },
+        "jvNo": { "type": "string" },
+        "jvDate": { "type": "string", "format": "date" },
+        "pvNo": { "type": "string" },
+        "pvDate": { "type": "string", "format": "date" },
+        "checkNo": { "type": "string" },
+        "checkDate": { "type": "string", "format": "date" },
+        "checkDispatchDate": { "type": "string", "format": "date" },
+        "beneficiaryName": { "type": "string" },
+        "beneficiaryAddress": { "type": "string" },
+        "fibAmount": { "type": "number" },
+        "fibPercentage": { "type": "number" },
+        "fibPeriodYears": { "type": "number" },
+        "rpAmount": { "type": "number" },
+        "mNmStatus": { "type": "string" },
+        "chequeNo": { "type": "string" },
+        "chequeDate": { "type": "string", "format": "date" },
+        "nomineeName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "bankName": { "type": "string" },
+        "branch": { "type": "string" },
+        "remarks": { "type": "string" },
+        "claimPaperReceived": { "type": "boolean" },
+        "documentsChecklist": {
+          "type": "object",
+          "properties": {
+            "deceasedCnic": { "type": "boolean" },
+            "deathCertificate": { "type": "boolean" },
+            "cnicCancellation": { "type": "boolean" },
+            "cnicBeneficiary": { "type": "boolean" },
+            "attestedFormA": { "type": "boolean" },
+            "attestedFormB": { "type": "boolean" },
+            "attestedFormC": { "type": "boolean" },
+            "attestedFormD": { "type": "boolean" },
+            "formAVerifiedBank": { "type": "boolean" },
+            "formBVerifiedHospital": { "type": "boolean" },
+            "frc": { "type": "boolean" },
+            "firAdb": { "type": "boolean" },
+            "docsAttested17Scale": { "type": "boolean" },
+            "beneficiaryCnicExpired": { "type": "boolean" }
+          }
+        },
+        "beneficiaryAccountNo": { "type": "string" },
+        "missingRequirementsNotes": { "type": "string" },
+        "isRequirementStatus": { "type": "boolean" },
+        "khushaliBonus": { "type": "number" },
+        "agencyChannel": {
+          "type": "object",
+          "properties": {
+            "am": { "type": "string" },
+            "sm": { "type": "string" },
+            "so": { "type": "string" },
+            "sr": { "type": "string" }
+          }
+        },
+        "currentStage": { 
+          "type": "string", 
+          "enum": [
+            "INTIMATION", 
+            "CALCULATION", 
+            "JV_APPROVAL", 
+            "DOCUMENTS_COLLECTION", 
+            "ZCC_PROCESSING", 
+            "INVESTIGATION", 
+            "AUDIT_PRE_ZCC", 
+            "RCC_PROCESSING", 
+            "PV_PREPARATION", 
+            "AUDIT_PV", 
+            "ACCOUNTS_FINAL", 
+            "PAID"
+          ] 
+        },
+        "investigationStatus": { "type": "string" },
+        "auditQueries": { "type": "string" },
+        "assignedFO": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["policyNo", "nameOfAssured", "dateOfDeath", "currentStage"]
+    },
+    "UserRole": {
+      "title": "User Role",
+      "description": "Permissions and role for the user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "INCHARGE", "ACCOUNTANT", "FO", "AUDIT", "ACCOUNTS", "CLERK"] }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/claims/{claimId}": {
+      "schema": "DeathClaim",
+      "description": "Death claims collection."
+    },
+    "/userRoles/{userId}": {
+      "schema": "UserRole",
+      "description": "Mapping of users to their specific roles."
+    }
+  }
+}
