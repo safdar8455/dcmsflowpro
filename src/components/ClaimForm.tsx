@@ -4,8 +4,19 @@ import { doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'fire
 import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { useAuth } from './AuthProvider';
 import { DeathClaim, ClaimStage } from '../types';
+import { setupFibPayments } from '../lib/fibScheduler';
 import { ArrowLeft, Save, Loader2, CheckCircle, XCircle, Settings, Trash2, CreditCard, Printer, FileText } from 'lucide-react';
 import { motion } from 'motion/react';
+
+import { 
+  calculateReversionaryBonus, 
+  calculateTerminalBonus, 
+  calculateLoyaltyBonus, 
+  calculateKhushaliBonus, 
+  calculateSpecialTerminalBonusFIB, 
+  calculateSpecialReversionaryBonusSB,
+  PlanType 
+} from '../lib/bonusCalculator';
 
 const STAGES: ClaimStage[] = [
   'INTIMATION', 'REQUIREMENT_APPLIED', 'DOCUMENTS_AWAITED', 'CALCULATION', 
@@ -37,15 +48,14 @@ export const ClaimForm: React.FC = () => {
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
             body { font-family: 'Inter', sans-serif; padding: 40px; color: #000; line-height: 1.5; }
             .header { display: flex; align-items: start; margin-bottom: 20px; }
-            .logo-img { width: 200px; height: auto; margin-right: 10px; }
+            .logo-img { width: 100px; height: auto; margin-right: 20px; }
             .header-text { flex: 1; border-left: 2px solid #000; padding-left: 15px; }
             .header-text h1 { margin: 0; font-size: 32px; font-weight: 700; color: #000; font-family: 'Times New Roman', serif; }
             .header-text h2 { margin: 0; font-size: 16px; font-weight: normal; color: #000; }
             .header-text .zone { font-weight: bold; font-size: 20px; margin-top: 2px; }
             .address-block { margin-top: 5px; font-size: 11px; font-weight: bold; line-height: 1.3; }
             .date-row { display: flex; justify-content: space-between; margin-bottom: 30px; }
-            .recipient { display: flex; justify-content: space-between; margin-bottom: 30px;}
-            .recipient2 > div { width: 20%;}
+            .recipient { margin-bottom: 30px; }
             .subject { font-weight: bold; text-decoration: underline; margin-bottom: 30px; }
             .body-text { margin-bottom: 40px; text-align: justify; }
             .closing { margin-top: 60px; }
@@ -59,6 +69,18 @@ export const ClaimForm: React.FC = () => {
         <body>
           <div class="header">
             <img src="/logo.png" class="logo-img" onerror="this.style.display='none'">
+            <div class="header-text">
+              <h1>State Life</h1>
+              <h2>Insurance Corporation of Pakistan</h2>
+              <div class="zone">Karachi Central Zone</div>
+              <div class="address-block">
+                Zonal Office,<br>
+                State Life Building No.11,<br>
+                6th & 7th Floor,<br>
+                Abdullah Haroon Road, Saddar,<br>
+                Karachi.
+              </div>
+            </div>
           </div>
 
           <div class="date-row">
@@ -133,7 +155,7 @@ export const ClaimForm: React.FC = () => {
              @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
             body { font-family: 'Inter', sans-serif; padding: 40px; color: #000; line-height: 1.5; }
             .header { display: flex; align-items: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 15px; }
-            .logo-img { width: 300px; height: auto; margin-right: 10px; }
+            .logo-img { width: 120px; height: auto; margin-right: 20px; }
             .header-text { flex: 1; }
             .header-text h1 { margin: 0; font-size: 36px; font-weight: bold; font-family: 'Times New Roman', serif; }
             .header-text div { font-size: 14px; font-weight: bold; text-transform: uppercase; }
@@ -147,22 +169,22 @@ export const ClaimForm: React.FC = () => {
         <body>
           <div class="header">
             <img src="/logo.png" class="logo-img" onerror="this.style.display='none'">
+            <div class="header-text">
+              <h1>State Life</h1>
+              <div>Insurance Corporation of Pakistan</div>
+              <div style="font-size: 20px;">Karachi Central Zone</div>
+            </div>
           </div>
           
           <div style="text-align: right;">Date: ${new Date().toLocaleDateString()}</div>
           
           <div class="recipient">
-            
-            <div class= "recipient2">
             To,<br>
             The Beneficiary / Claimant,<br>
             <b>${formData.beneficiaryName || formData.nameOfAssured}</b><br>
             ${formData.beneficiaryAddress || '[Address Not Provided]'}<br><br>
             Policy No: ${formData.policyNo}<br>
             Assured: ${formData.nameOfAssured}
-            </div>
-            <div></div>
-            
           </div>
 
           <div class="subject">Subject: SETTLEMENT OF DEATH CLAIM - OUTSTANDING REQUIREMENTS</div>
@@ -228,6 +250,15 @@ export const ClaimForm: React.FC = () => {
     riskDate: '',
     earlyCase: false,
     nd: false,
+    isRevived: false,
+    revivalDate: '',
+    hasFIB: false,
+    fibTerm: 0,
+    hasAIB_ADB: false,
+    aib_adbTerm: 0,
+    hasTIR: false,
+    tirTerm: 0,
+    otherRiders: '',
     mode: 'YLY',
     gender: 'M',
     age: 0,
@@ -259,6 +290,8 @@ export const ClaimForm: React.FC = () => {
     totalAmount: 0,
     instPremium: 0,
     extraPremium: 0,
+    selectionStatus: 'STANDARD',
+    medicalStatus: 'MEDICAL',
     remarks: '',
     jvNo: '',
     jvDate: '',
@@ -385,6 +418,19 @@ export const ClaimForm: React.FC = () => {
 
     try {
       const timestamp = new Date().toISOString();
+      
+      // Check for duplicate policy number if new record
+      if (isNew && formData.policyNo) {
+        const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
+        const q = query(collection(db, 'claims'), where('policyNo', '==', formData.policyNo), limit(1));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          alert(`Duplicate Policy Found: A claim for policy ${formData.policyNo} already exists in the system.`);
+          setSaving(false);
+          return;
+        }
+      }
+
       const claimId = isNew ? Math.random().toString(36).substr(2, 9) : id!;
       const docRef = doc(db, 'claims', claimId);
 
@@ -399,6 +445,11 @@ export const ClaimForm: React.FC = () => {
         await setDoc(docRef, data);
       } else {
         await updateDoc(docRef, data);
+      }
+
+      if (data.currentStage === 'PAID') {
+        const fullClaim = { ...data, id: claimId } as DeathClaim;
+        await setupFibPayments(fullClaim);
       }
 
       navigate('/claims');
@@ -420,6 +471,12 @@ export const ClaimForm: React.FC = () => {
           currentStage: nextStage,
           updatedAt: new Date().toISOString()
         });
+
+        if (nextStage === 'PAID') {
+          const updatedClaim = { ...formData, id, currentStage: nextStage } as DeathClaim;
+          await setupFibPayments(updatedClaim);
+        }
+
         setFormData(prev => ({ ...prev, currentStage: nextStage }));
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `claims/${id}`);
@@ -529,6 +586,29 @@ export const ClaimForm: React.FC = () => {
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Risk Commencement</label>
               <input type="date" name="riskDate" value={formData.riskDate || ''} onChange={handleChange} className="input-field w-full" />
             </div>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="earlyCase" checked={formData.earlyCase} onChange={handleChange} className="w-3 h-3 rounded text-blue-600" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Early Case (EY)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="nd" checked={formData.nd} onChange={handleChange} className="w-3 h-3 rounded text-blue-600" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase">ND Case (Non-Disclosure)</span>
+              </label>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="isRevived" checked={formData.isRevived} onChange={handleChange} className="w-3 h-3 rounded text-blue-600" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Revived Policy?</span>
+              </label>
+              {formData.isRevived && (
+                <input type="date" name="revivalDate" value={formData.revivalDate || ''} onChange={handleChange} className="input-field w-full text-[10px] py-1" placeholder="Revival Date" />
+              )}
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Cause of Death</label>
+              <input type="text" name="causeOfDeath" value={formData.causeOfDeath || ''} onChange={handleChange} className="input-field w-full" placeholder="e.g., Natural/Accident" />
+            </div>
           </div>
 
           <div className="border-t border-slate-50 pt-4 mt-6">
@@ -552,67 +632,143 @@ export const ClaimForm: React.FC = () => {
 
         {/* Risk Metrics */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-4">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              2. Risk & Policy Data
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Gender</label>
-                <select name="gender" value={formData.gender} onChange={handleChange} className="input-field w-full text-xs">
-                  <option value="M">Male (M)</option>
-                  <option value="NM">Female (NM)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Age at Risk</label>
-                <input type="number" name="age" value={formData.age || 0} onChange={handleChange} className="input-field w-full font-mono" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Premium Mode</label>
-                <select name="mode" value={formData.mode} onChange={handleChange} className="input-field w-full text-xs">
-                  <option value="YLY">Yearly</option>
-                  <option value="HLY">Half-Yly</option>
-                  <option value="QLY">Quarterly</option>
-                  <option value="MLY">Monthly</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Table</label>
-                <input type="text" name="table" value={formData.table || ''} onChange={handleChange} className="input-field w-full font-mono" placeholder="76, 19, etc" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Term</label>
-                <input type="number" name="term" value={formData.term || 0} onChange={handleChange} className="input-field w-full font-mono" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Maturity Year</label>
-                <input type="number" name="yearOfMaturity" value={formData.yearOfMaturity || 0} onChange={handleChange} className="input-field w-full font-mono" />
-              </div>
-            </div>
-            
-            <div className="pt-4 space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <div className="relative">
-                  <input type="checkbox" name="claimPaperReceived" checked={formData.claimPaperReceived} onChange={handleChange} className="peer sr-only" />
-                  <div className="w-10 h-5 bg-slate-200 rounded-full peer peer-checked:bg-blue-600 transition-colors"></div>
-                  <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-all peer-checked:left-6"></div>
+          <div className="space-y-6">
+            <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-4">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                2. Risk & Policy Data
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Gender</label>
+                  <select name="gender" value={formData.gender} onChange={handleChange} className="input-field w-full text-xs">
+                    <option value="M">Male (M)</option>
+                    <option value="NM">Female (NM)</option>
+                  </select>
                 </div>
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Claim Papers Received</span>
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Status as at 31.12.25</label>
-                  <input type="text" name="policyStatus" value={formData.policyStatus || ''} onChange={handleChange} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" placeholder="INFORCE/LAPSE" />
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Age at Risk</label>
+                  <input type="number" name="age" value={formData.age || 0} onChange={handleChange} className="input-field w-full font-mono" />
                 </div>
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Option</label>
-                  <input type="text" name="option" value={formData.option || ''} onChange={handleChange} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" placeholder="A/B/C" />
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Premium Mode</label>
+                  <select name="mode" value={formData.mode} onChange={handleChange} className="input-field w-full text-xs">
+                    <option value="YLY">Yearly</option>
+                    <option value="HLY">Half-Yly</option>
+                    <option value="QLY">Quarterly</option>
+                    <option value="MLY">Monthly</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Table</label>
+                  <input type="text" name="table" value={formData.table || ''} onChange={handleChange} className="input-field w-full font-mono" placeholder="76, 19, etc" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Term</label>
+                  <input type="number" name="term" value={formData.term || 0} onChange={handleChange} className="input-field w-full font-mono" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Maturity Year</label>
+                  <input type="number" name="yearOfMaturity" value={formData.yearOfMaturity || 0} onChange={handleChange} className="input-field w-full font-mono" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Selection Status</label>
+                  <select name="selectionStatus" value={formData.selectionStatus} onChange={handleChange} className="input-field w-full text-xs">
+                    <option value="STANDARD">STANDARD</option>
+                    <option value="SUBSTANDARD">SUBSTANDARD</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Medical Status</label>
+                  <select name="medicalStatus" value={formData.medicalStatus} onChange={handleChange} className="input-field w-full text-xs">
+                    <option value="MEDICAL">MEDICAL</option>
+                    <option value="NON-MEDICAL">NON-MEDICAL</option>
+                  </select>
                 </div>
               </div>
-            </div>
-          </section>
+              
+              <div className="pt-4 space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className="relative">
+                    <input type="checkbox" name="claimPaperReceived" checked={formData.claimPaperReceived} onChange={handleChange} className="peer sr-only" />
+                    <div className="w-10 h-5 bg-slate-200 rounded-full peer peer-checked:bg-blue-600 transition-colors"></div>
+                    <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-all peer-checked:left-6"></div>
+                  </div>
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Claim Papers Received</span>
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Status as at 31.12.25</label>
+                    <input type="text" name="policyStatus" value={formData.policyStatus || ''} onChange={handleChange} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" placeholder="INFORCE/LAPSE" />
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Option</label>
+                    <input type="text" name="option" value={formData.option || ''} onChange={handleChange} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" placeholder="A/B/C" />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-4">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Supplemental Riders
+              </h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                  <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="hasFIB" checked={formData.hasFIB} onChange={handleChange} className="w-4 h-4 rounded text-emerald-600" />
+                      <span className="text-xs font-bold text-slate-600 uppercase">Family Income Benefit (FIB)</span>
+                    </label>
+                    {formData.hasFIB && (
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <label className="block text-[8px] font-bold text-slate-400 uppercase mb-0.5">FIB Table</label>
+                          <input type="text" name="fibTable" value={formData.fibTable || ''} onChange={handleChange} className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs font-mono" placeholder="Table" />
+                        </div>
+                        <div className="w-24">
+                          <label className="block text-[8px] font-bold text-slate-400 uppercase mb-0.5">FIB Term</label>
+                          <input type="number" name="fibTerm" value={formData.fibTerm || 0} onChange={handleChange} className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs font-mono" placeholder="Term" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="hasAIB_ADB" checked={formData.hasAIB_ADB} onChange={handleChange} className="w-4 h-4 rounded text-emerald-600" />
+                      <span className="text-xs font-bold text-slate-600 uppercase">AIB / ADB</span>
+                    </label>
+                    {formData.hasAIB_ADB && (
+                      <div>
+                        <label className="block text-[8px] font-bold text-slate-400 uppercase mb-0.5">Term</label>
+                        <input type="number" name="aib_adbTerm" value={formData.aib_adbTerm || 0} onChange={handleChange} className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs font-mono" placeholder="Term" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="hasTIR" checked={formData.hasTIR} onChange={handleChange} className="w-4 h-4 rounded text-emerald-600" />
+                      <span className="text-xs font-bold text-slate-600 uppercase">TIR</span>
+                    </label>
+                    {formData.hasTIR && (
+                      <div>
+                        <label className="block text-[8px] font-bold text-slate-400 uppercase mb-0.5">Term</label>
+                        <input type="number" name="tirTerm" value={formData.tirTerm || 0} onChange={handleChange} className="w-16 bg-white border border-slate-200 rounded px-2 py-1 text-xs font-mono" placeholder="Term" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Other Riders</label>
+                    <input type="text" name="otherRiders" value={formData.otherRiders || ''} onChange={handleChange} className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs" placeholder="e.g., WP" />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
 
           <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-4">
@@ -641,6 +797,8 @@ export const ClaimForm: React.FC = () => {
                 { label: 'Late Fee', name: 'lateFee' },
                 { label: 'Loan + Interest', name: 'loanInt' },
                 { label: 'Susp/Pre Refund', name: 'suspPreRefund' },
+                { label: 'Extra Premium', name: 'extraPremium' },
+                { label: 'Inst. Premium', name: 'instPremium' },
               ].map((field) => (
                 <div key={field.name} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
                   <label className="text-[9px] font-bold text-slate-500 uppercase">{field.label}</label>
@@ -771,70 +929,6 @@ export const ClaimForm: React.FC = () => {
             </div>
           </div>
         </section>
-
-          {/* FIB Section */}
-          <section className={`p-6 rounded-2xl border transition-all hover:shadow-md space-y-6 ${formData.currentStage === 'PAID' ? 'bg-pink-50 border-pink-200' : 'bg-white border-slate-200 shadow-sm'}`}>
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-              <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-2 text-slate-800">
-                <Settings size={16} className="text-pink-500" />
-                4. FIB (Family Income Benefit) Details
-                {formData.currentStage === 'PAID' && <span className="bg-pink-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pulse">PAYMENT ACTIVE</span>}
-              </h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">FIB % of Sum Assured</label>
-                <input type="number" name="fibPercentage" value={formData.fibPercentage || 0} onChange={handleChange} className="input-field w-full" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Starting Monthly Amount</label>
-                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-700">
-                  Rs. {(formData.fibAmount || 0).toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">FIB Period (Years)</label>
-                <input type="number" name="fibPeriodYears" value={formData.fibPeriodYears || 0} onChange={handleChange} className="input-field w-full" />
-              </div>
-            </div>
-
-            {formData.fibAmount && formData.fibPeriodYears ? (
-              <div className="mt-4 space-y-4">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1">Projected Payment Schedule</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {Array.from({ length: Math.min(formData.fibPeriodYears, 10) }).map((_, yearIndex) => {
-                    const year = yearIndex + 1;
-                    let amount = formData.fibAmount || 0;
-                    if (year > 3) {
-                      // Apply 7.5% compound interest from year 4 onwards
-                      amount = amount * Math.pow(1.075, year - 3);
-                    }
-                    return (
-                      <div key={year} className="bg-white border border-slate-100 p-2 rounded-lg shadow-sm">
-                        <div className="text-[9px] font-bold text-slate-400 uppercase">Year {year}</div>
-                        <div className="text-[11px] font-mono font-bold text-slate-700">Rs. {Math.round(amount).toLocaleString()}</div>
-                        <div className="text-[8px] text-pink-500 font-medium">
-                          {year <= 3 ? 'Constant' : `+${((Math.pow(1.075, year - 3) - 1) * 100).toFixed(1)}%`}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {formData.fibPeriodYears > 10 && (
-                    <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg flex items-center justify-center italic text-[10px] text-slate-400">
-                      ...and so on for {formData.fibPeriodYears - 10} more years
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-[11px] text-blue-700 leading-relaxed shadow-sm">
-              <p className="font-bold mb-1 uppercase tracking-wider">Note on FIB Calculation:</p>
-              Family Income Benefit (FIB) payments commence one month after the date of death. 
-              The initial periodic payments remain constant for the first 3 years. From the 4th year onwards, 
-              a 7.5% compound increment is applied to each subsequent payment.
-            </div>
-          </section>
 
           {/* Checklist & Missing Documents Section */}
           <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md space-y-6">
@@ -993,6 +1087,7 @@ export const ClaimForm: React.FC = () => {
             </div>
           </div>
         </section>
+
       </form>
     </div>
   );

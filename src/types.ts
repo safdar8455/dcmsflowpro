@@ -36,10 +36,22 @@ export interface DeathClaim {
   yearOfMaturity: number;
   instPremium: number;
   extraPremium: number;
+  selectionStatus?: 'STANDARD' | 'SUBSTANDARD';
+  medicalStatus?: 'MEDICAL' | 'NON-MEDICAL';
   policyStatus: string;
   option: string;
   earlyCase: boolean;
   nd: boolean;
+  isRevived: boolean;
+  revivalDate: string;
+  hasFIB: boolean;
+  fibTerm: number;
+  fibTable: string;
+  hasAIB_ADB: boolean;
+  aib_adbTerm: number;
+  hasTIR: boolean;
+  tirTerm: number;
+  otherRiders: string;
   causeOfDeath: string;
   causeOfDeathCode?: string;
   sumAssuredPup?: number;
@@ -72,6 +84,7 @@ export interface DeathClaim {
   checkDispatchDate?: string;
   beneficiaryName?: string;
   beneficiaryAddress?: string;
+  bankName?: string;
   branch?: string;
   remarks?: string;
   claimPaperReceived?: boolean;
@@ -114,6 +127,19 @@ export interface DeathClaim {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+}
+
+export interface FibPayment {
+  id: string;
+  claimId: string;
+  policyNo: string;
+  dueDate: string;
+  amount: number;
+  paymentYear: number;
+  status: 'SCHEDULED' | 'PAID' | 'PENDING';
+  paidDate?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserRole {

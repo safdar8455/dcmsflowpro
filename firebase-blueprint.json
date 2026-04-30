@@ -139,6 +139,24 @@
         "role": { "type": "string", "enum": ["ADMIN", "INCHARGE", "ACCOUNTANT", "FO", "AUDIT", "ACCOUNTS", "CLERK"] }
       },
       "required": ["uid", "email", "role"]
+    },
+    "FibPayment": {
+      "title": "FIB Payment",
+      "description": "Family Income Benefit annual payment record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "claimId": { "type": "string" },
+        "policyNo": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date" },
+        "amount": { "type": "number" },
+        "paymentYear": { "type": "integer" },
+        "status": { "type": "string", "enum": ["SCHEDULED", "PAID", "PENDING"] },
+        "paidDate": { "type": "string", "format": "date" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["claimId", "policyNo", "dueDate", "amount", "paymentYear", "status"]
     }
   },
   "firestore": {
@@ -149,6 +167,10 @@
     "/userRoles/{userId}": {
       "schema": "UserRole",
       "description": "Mapping of users to their specific roles."
+    },
+    "/fibPayments/{paymentId}": {
+      "schema": "FibPayment",
+      "description": "FIB payments scheduled for claims."
     }
   }
 }

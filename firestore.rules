@@ -22,7 +22,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      let email = request.auth != null ? request.auth.token.email : null;
+      let email = request.auth != null ? request.auth.token.email.lower() : null;
       let uid = request.auth != null ? request.auth.uid : null;
       let roleDocPath = uid != null ? /databases/$(database)/documents/userRoles/$(uid) : null;
       
@@ -34,7 +34,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128;
     }
 
     function incoming() {
@@ -56,17 +56,31 @@ service cloud.firestore {
                'AUDIT_PRE_ZCC', 'RCC_PROCESSING', 'PV_PREPARATION', 'AUDIT_PV', 
                'ACCOUNTS_FINAL', 'PAID', 'RECORD_ROOM'
              ] &&
-             (data.get('totalAmount', 0) is number) &&
-             (data.get('netAmount', 0) is number) &&
+             (data.get('totalAmount', 0) is number || data.get('totalAmount', 0) is float || data.get('totalAmount', 0) is int) &&
+             (data.get('netAmount', 0) is number || data.get('netAmount', 0) is float || data.get('netAmount', 0) is int) &&
              (data.get('bonuses', 0) is number) &&
              (data.get('intBonus', 0) is number) &&
              (data.get('millionBonus', 0) is number) &&
              (data.get('goldenJubileeBonus', 0) is number) &&
              (data.get('terminalBonus', 0) is number) &&
-             (data.get('fibAmount', 0) is number) &&
+             (data.get('fibAnn', 0) is number) &&
              (data.get('fibPercentage', 0) is number) &&
              (data.get('fibPeriodYears', 0) is number) &&
-             (data.get('rpAmount', 0) is number);
+             (data.get('rpAmount', 0) is number || data.get('rpAmount', 0) is float || data.get('rpAmount', 0) is int) &&
+             (data.get('extraPremium', 0) is number) &&
+             (data.get('selectionStatus', 'STANDARD') in ['STANDARD', 'SUBSTANDARD']) &&
+             (data.get('medicalStatus', 'MEDICAL') in ['MEDICAL', 'NON-MEDICAL']);
+    }
+
+    function isValidFibPayment(data) {
+      return data.get('claimId', '') is string && isValidId(data.get('claimId', '')) &&
+             data.get('policyNo', '') is string && data.get('policyNo', '').size() <= 50 &&
+             data.get('dueDate', '') is string && data.get('dueDate', '').size() <= 20 &&
+             (data.get('amount', 0) is number || data.get('amount', 0) is float || data.get('amount', 0) is int) &&
+             data.get('paymentYear', 0) is int &&
+             data.get('status', 'PENDING') in ['SCHEDULED', 'PAID', 'PENDING'] &&
+             data.get('createdAt', '') is string &&
+             data.get('updatedAt', '') is string;
     }
 
     // --- Collections ---
@@ -75,6 +89,33 @@ service cloud.firestore {
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow list: if isAdmin();
       allow create, update, delete: if isAdmin();
+    }
+
+    match /fibPayments/{paymentId} {
+      allow get: if isSignedIn() && isValidId(paymentId);
+      allow list: if isSignedIn() && (
+        isAdmin() || 
+        getUserRole() in ['INCHARGE', 'ACCOUNTANT', 'AUDIT', 'ACCOUNTS', 'CLERK', 'FO']
+      );
+      
+      allow create: if isSignedIn() && 
+                       isValidId(paymentId) && 
+                       isValidFibPayment(incoming()) &&
+                       (isAdmin() || (
+                         getUserRole() in ['INCHARGE', 'ACCOUNTS', 'ACCOUNTANT', 'CLERK']
+                       ));
+
+      allow update: if isSignedIn() && 
+                       isValidFibPayment(incoming()) && (
+                         isAdmin() || (
+                           incoming().claimId == existing().claimId &&
+                           incoming().paymentYear == existing().paymentYear &&
+                           getUserRole() in ['INCHARGE', 'ACCOUNTS', 'ACCOUNTANT', 'CLERK'] &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidDate', 'updatedAt'])
+                         )
+                       );
+
+      allow delete: if isAdmin();
     }
 
     match /claims/{claimId} {
@@ -86,12 +127,9 @@ service cloud.firestore {
 
       allow create: if isSignedIn() && 
                        isValidId(claimId) && 
-                       isValidDeathClaim(incoming()) &&
-                       incoming().currentStage == 'INTIMATION' &&
                        (isAdmin() || (
-                         incoming().createdAt is string &&
-                         incoming().updatedAt is string &&
-                         getUserRole() in ['INCHARGE', 'CLERK']
+                         isValidDeathClaim(incoming()) &&
+                         incoming().currentStage == 'INTIMATION' && getUserRole() in ['INCHARGE', 'CLERK']
                        ));
 
       allow update: if (
@@ -99,7 +137,6 @@ service cloud.firestore {
         isValidDeathClaim(incoming()) && (
           isAdmin() ||
           (
-            incoming().updatedAt is string &&
             incoming().createdAt == existing().createdAt &&
             incoming().policyNo == existing().policyNo &&
             getUserRole() in ['INCHARGE', 'ACCOUNTANT', 'AUDIT', 'ACCOUNTS', 'CLERK', 'FO']

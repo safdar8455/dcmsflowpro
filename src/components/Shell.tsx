@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from './AuthProvider';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
-import { LogOut, LayoutDashboard, FileText, Settings, User as UserIcon } from 'lucide-react';
+import { LogOut, LayoutDashboard, FileText, Settings, User as UserIcon, Calculator, TrendingUp } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 export const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -14,6 +14,8 @@ export const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Death Claims', path: '/claims', icon: FileText },
+    { name: 'FIB Schedule', path: '/fib-schedule', icon: TrendingUp },
+    { name: 'Bonus Helper', path: '/bonus-helper', icon: Calculator },
   ];
 
   const bootstrapAdmins = ['safderjamali12@gmail.com', 'safdarse063@gmail.com'];

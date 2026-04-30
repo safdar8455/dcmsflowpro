@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, addDoc, serverTimestamp, writeBatch, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { DeathClaim, ClaimStage } from '../types';
-import { Plus, Search, Filter, Eye, Download } from 'lucide-react';
+import { Plus, Search, Filter, Eye, Download, FileUp, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAuth } from './AuthProvider';
 
 export const ClaimList: React.FC = () => {
+  const { role } = useAuth();
   const [claims, setClaims] = useState<DeathClaim[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState<ClaimStage | 'ALL'>('ALL');
@@ -39,7 +41,7 @@ export const ClaimList: React.FC = () => {
       'S-No', 'POLICY NO', 'NAME-OF-CLAIMANT', 'P-V-No', 'J-V-No', 'J-V-DATE', 
       'CLAIM-No', 'CHQ-No', 'CHQ-DATE', 'CHQ-AMOUNT', 'SUM-ASSURED', 'ADD-S-A', 
       'BONUSES', 'RP', 'M-NM', 'FIB', 'AIB', 'SB', 'SP-B', 'REF-OF-SUS', 
-      'E-NE', 'CAUSE-OF-DEATH', 'REMARKS'
+      'E-NE', 'ND', 'REVIVED', 'REVIVAL DATE', 'EXTRA-PREMIUM', 'SELECTION', 'MEDICAL', 'FIB-TERM', 'AIB-TERM', 'TIR-TERM', 'CAUSE-OF-DEATH', 'REMARKS'
     ];
 
     const rows = paidClaims.map((c, index) => [
@@ -64,6 +66,15 @@ export const ClaimList: React.FC = () => {
       c.spBonus || 0,
       c.suspPreRefund || 0,
       c.earlyCase ? 'EY' : 'NE',
+      c.nd ? 'ND' : 'NO',
+      c.isRevived ? 'YES' : 'NO',
+      c.revivalDate || '',
+      c.extraPremium || 0,
+      c.selectionStatus || 'STANDARD',
+      c.medicalStatus || 'MEDICAL',
+      c.hasFIB ? c.fibTerm : 0,
+      c.hasAIB_ADB ? c.aib_adbTerm : 0,
+      c.hasTIR ? c.tirTerm : 0,
       c.causeOfDeath || '',
       c.remarks || ''
     ]);
@@ -90,7 +101,7 @@ export const ClaimList: React.FC = () => {
       'S-No', 'POLICY NO', 'NAME-OF-CLAIMANT', 'P-V-No', 'J-V-No', 'J-V-DATE', 
       'CLAIM-No', 'CHQ-No', 'CHQ-DATE', 'CHQ-AMOUNT', 'SUM-ASSURED', 'ADD-S-A', 
       'BONUSES', 'RP', 'M-NM', 'FIB', 'AIB', 'SB', 'SP-B', 'REF-OF-SUS', 
-      'E-NE', 'CAUSE-OF-DEATH', 'REMARKS'
+      'E-NE', 'ND', 'REVIVED', 'REVIVAL DATE', 'EXTRA-PREMIUM', 'SELECTION', 'MEDICAL', 'FIB-TERM', 'AIB-TERM', 'TIR-TERM', 'CAUSE-OF-DEATH', 'REMARKS'
     ];
 
     const rows = filteredClaims.map((c, index) => [
@@ -115,6 +126,15 @@ export const ClaimList: React.FC = () => {
       c.spBonus || 0,
       c.suspPreRefund || 0,
       c.earlyCase ? 'EY' : 'NE',
+      c.nd ? 'ND' : 'NO',
+      c.isRevived ? 'YES' : 'NO',
+      c.revivalDate || '',
+      c.extraPremium || 0,
+      c.selectionStatus || 'STANDARD',
+      c.medicalStatus || 'MEDICAL',
+      c.hasFIB ? c.fibTerm : 0,
+      c.hasAIB_ADB ? c.aib_adbTerm : 0,
+      c.hasTIR ? c.tirTerm : 0,
       c.causeOfDeath || '',
       c.remarks || ''
     ]);
@@ -133,6 +153,58 @@ export const ClaimList: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDeleteAll = async () => {
+    if (!role || role.role !== 'ADMIN') {
+      alert('Only administrators can perform this action.');
+      return;
+    }
+
+    if (!window.confirm('WARNING: This will permanently delete ALL claim records and FIB payments. This action cannot be undone. Are you absolutely sure?')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Delete all claims
+      const claimsSnapshot = await getDocs(collection(db, 'claims'));
+      let batch = writeBatch(db);
+      let count = 0;
+      
+      for (const d of claimsSnapshot.docs) {
+        batch.delete(d.ref);
+        count++;
+        if (count >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+      if (count > 0) await batch.commit();
+
+      // 2. Delete all FIB payments
+      const fibSnapshot = await getDocs(collection(db, 'fibPayments'));
+      batch = writeBatch(db);
+      count = 0;
+      for (const d of fibSnapshot.docs) {
+        batch.delete(d.ref);
+        count++;
+        if (count >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+      if (count > 0) await batch.commit();
+
+      alert('All records have been deleted successfully.');
+    } catch (error) {
+      console.error('Error deleting records:', error);
+      alert('Error deleting records. Please check permissions.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -175,6 +247,15 @@ export const ClaimList: React.FC = () => {
           <p className="text-slate-500 text-sm">Manage and track death claims across all processing centers</p>
         </div>
         <div className="flex items-center gap-3">
+          {role?.role === 'ADMIN' && (
+            <button
+              onClick={handleDeleteAll}
+              className="flex items-center justify-center gap-2 bg-rose-600 text-white px-5 py-2.5 rounded-lg font-bold text-sm hover:bg-rose-700 transition-all shadow-lg shadow-rose-500/20 active:scale-95"
+            >
+              <Trash2 size={18} />
+              Delete All Records
+            </button>
+          )}
           <button
             onClick={exportPaidClaimsCSV}
             className="flex items-center justify-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg font-bold text-sm hover:bg-green-700 transition-all shadow-lg shadow-green-500/20 active:scale-95"
@@ -189,6 +270,13 @@ export const ClaimList: React.FC = () => {
             <Download size={18} />
             Export Monthly Report
           </button>
+          <Link 
+            to="/claims/import"
+            className="flex items-center justify-center gap-2 bg-slate-800 text-white px-5 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-900 transition-all shadow-lg shadow-slate-500/20 active:scale-95"
+          >
+            <FileUp size={18} />
+            Bulk Import CSV
+          </Link>
           <Link 
             to="/claims/new"
             className="flex items-center justify-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 active:scale-95"

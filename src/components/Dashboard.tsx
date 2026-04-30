@@ -23,6 +23,8 @@ const STAGE_CONFIG: Record<ClaimStage, { label: string; color: string; icon: any
   RECORD_ROOM: { label: 'Record Room', color: 'bg-slate-50', textColor: 'text-slate-700', icon: CheckCircle2 },
 };
 
+const DEFAULT_CONFIG = { label: 'Unknown', color: 'bg-slate-50', textColor: 'text-slate-700', icon: AlertCircle };
+
 export const Dashboard: React.FC = () => {
   const [claims, setClaims] = useState<DeathClaim[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,8 +87,8 @@ export const Dashboard: React.FC = () => {
             className={`p-4 rounded-xl border transition-all group relative overflow-hidden ${stat.count > 0 ? 'bg-white border-slate-200 shadow-sm hover:shadow-md' : 'bg-slate-50/50 border-slate-100 opacity-60'}`}
           >
             <div className="flex items-center justify-between mb-3">
-              <div className={`p-2 rounded-lg ${stat.count > 0 ? `${stat.color} ${stat.textColor}` : 'bg-slate-100 text-slate-400'} group-hover:scale-110 transition-transform`}>
-                <stat.icon size={16} />
+              <div className={`p-2 rounded-lg ${stat.count > 0 ? `${stat.color || 'bg-slate-50'} ${stat.textColor || 'text-slate-700'}` : 'bg-slate-100 text-slate-400'} group-hover:scale-110 transition-transform`}>
+                {stat.icon ? <stat.icon size={16} /> : <AlertCircle size={16} />}
               </div>
               <span className={`text-xl font-bold font-mono tracking-tighter ${stat.count > 0 ? 'text-slate-800' : 'text-slate-400'}`}>{stat.count}</span>
             </div>
@@ -95,7 +97,7 @@ export const Dashboard: React.FC = () => {
               {stat.count > 0 && (
                 <div className="h-1 w-full bg-slate-100 rounded-full mt-2 overflow-hidden">
                   <div 
-                    className={`h-full ${stat.textColor.replace('text', 'bg')} transition-all duration-1000`} 
+                    className={`h-full ${(stat.textColor || 'text-slate-700').replace('text', 'bg')} transition-all duration-1000`} 
                     style={{ width: `${(stat.count / (claims.length || 1)) * 100}%` }}
                   />
                 </div>
@@ -140,12 +142,17 @@ export const Dashboard: React.FC = () => {
                           <div className="text-[10px] text-slate-400 group-hover:text-slate-600 truncate max-w-[150px]">{claim.nameOfAssured}</div>
                         </td>
                         <td className="px-6 py-3 font-mono text-xs text-slate-600">
-                          {claim.totalAmount?.toLocaleString()}
+                          {claim.totalAmount?.toLocaleString() || 0}
                         </td>
                         <td className="px-6 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STAGE_CONFIG[claim.currentStage].color} ${STAGE_CONFIG[claim.currentStage].textColor} border-current`}>
-                            {STAGE_CONFIG[claim.currentStage].label}
-                          </span>
+                          {(() => {
+                            const config = STAGE_CONFIG[claim.currentStage] || DEFAULT_CONFIG;
+                            return (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${config.color} ${config.textColor} border-current`}>
+                                {config.label}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-3 text-right text-[10px] text-slate-400 font-medium">
                           {new Date(claim.updatedAt).toLocaleDateString()}

@@ -4,14 +4,17 @@
  */
 
 import React from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './components/AuthProvider';
 import { Shell } from './components/Shell';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { ClaimList } from './components/ClaimList';
 import { ClaimForm } from './components/ClaimForm';
+import { BulkImport } from './components/BulkImport';
 import { UserAccess } from './components/UserAccess';
+import BonusHelper from './components/BonusHelper';
+import FibSchedulePage from './components/FibSchedulePage';
 
 const AuthenticatedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -62,10 +65,34 @@ export default function App() {
             }
           />
           <Route
+            path="/claims/import"
+            element={
+              <AuthenticatedRoute>
+                <BulkImport />
+              </AuthenticatedRoute>
+            }
+          />
+          <Route
             path="/admin"
             element={
               <AuthenticatedRoute>
                 <UserAccess />
+              </AuthenticatedRoute>
+            }
+          />
+          <Route
+            path="/bonus-helper"
+            element={
+              <AuthenticatedRoute>
+                <BonusHelper />
+              </AuthenticatedRoute>
+            }
+          />
+          <Route
+            path="/fib-schedule"
+            element={
+              <AuthenticatedRoute>
+                <FibSchedulePage />
               </AuthenticatedRoute>
             }
           />
