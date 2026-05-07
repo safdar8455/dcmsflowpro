@@ -90,6 +90,111 @@ export const BulkImport: React.FC = () => {
 
           const trim = (val: any) => String(val || '').trim();
 
+          const parseDate = (val: any): string => {
+            if (!val || val === '') return '';
+            
+            // If it's already a string in YYYY-MM-DD format, return as is
+            if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val.trim())) {
+              return val.trim();
+            }
+            
+            // Handle Excel serial dates (numbers)
+            if (typeof val === 'number' && !isNaN(val)) {
+              // Excel dates start from 1900-01-01 (serial date 1)
+              // But Excel incorrectly treats 1900 as a leap year, so we need to adjust
+              const excelEpoch = new Date(1900, 0, 1);
+              const days = val - 1; // Subtract 1 because Excel considers 1900-01-01 as day 1
+              const date = new Date(excelEpoch.getTime() + days * 24 * 60 * 60 * 1000);
+              // Use local date formatting instead of UTC
+              const year = date.getFullYear();
+              const month = String(date.getMonth() + 1).padStart(2, '0');
+              const day = String(date.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            }
+            
+            // Try to parse string dates
+            if (typeof val === 'string') {
+              const trimmed = val.trim();
+              
+              // Try different common formats
+              const formats = [
+                // MM/DD/YYYY or DD/MM/YYYY (ambiguous, assume MM/DD/YYYY first)
+                /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
+                // DD-MM-YYYY or MM-DD-YYYY
+                /^(\d{1,2})-(\d{1,2})-(\d{4})$/,
+                // YYYY/MM/DD
+                /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/,
+                // YYYY-MM-DD (already handled above)
+                // DD MMM YYYY (e.g., 15 Jan 2024)
+                /^(\d{1,2})\s+(\w{3})\s+(\d{4})$/i
+              ];
+              
+              for (const format of formats) {
+                const match = trimmed.match(format);
+                if (match) {
+                  try {
+                    let year, month, day;
+                    
+                    if (format === formats[0] || format === formats[1]) {
+                      // For MM/DD/YYYY or DD/MM/YYYY, assume MM/DD/YYYY
+                      // If day > 12, it's likely DD/MM/YYYY
+                      const part1 = parseInt(match[1]);
+                      const part2 = parseInt(match[2]);
+                      const part3 = parseInt(match[3]);
+                      
+                      if (part2 > 12) {
+                        // Likely DD/MM/YYYY
+                        day = part1;
+                        month = part2;
+                        year = part3;
+                      } else {
+                        // Assume MM/DD/YYYY
+                        month = part1;
+                        day = part2;
+                        year = part3;
+                      }
+                    } else if (format === formats[2]) {
+                      // YYYY/MM/DD
+                      year = parseInt(match[1]);
+                      month = parseInt(match[2]);
+                      day = parseInt(match[3]);
+                    } else if (format === formats[3]) {
+                      // DD MMM YYYY
+                      day = parseInt(match[1]);
+                      const monthName = match[2].toLowerCase();
+                      year = parseInt(match[3]);
+                      
+                      const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 
+                                        'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+                      month = monthNames.indexOf(monthName.substring(0, 3)) + 1;
+                      
+                      if (month === 0) continue; // Invalid month name
+                    }
+                    
+                    // Validate date
+                    if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+                      continue;
+                    }
+                    
+                    const date = new Date(year, month - 1, day);
+                    if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+                      // Use local date formatting instead of UTC
+                      const formattedYear = date.getFullYear();
+                      const formattedMonth = String(date.getMonth() + 1).padStart(2, '0');
+                      const formattedDay = String(date.getDate()).padStart(2, '0');
+                      return `${formattedYear}-${formattedMonth}-${formattedDay}`;
+                    }
+                  } catch (e) {
+                    continue;
+                  }
+                }
+              }
+            }
+            
+            // If all parsing fails, return empty string
+            return '';
+          };
+
           for (const row of allRows) {
             if (!row.policyNo) continue;
 
@@ -118,10 +223,10 @@ export const BulkImport: React.FC = () => {
               policyNo: pollNo,
               claimNo: trim(row.claimNo),
               nameOfAssured: trim(row.nameOfAssured || 'Imported Case').substring(0, 200),
-              riskDate: trim(row.riskDate),
-              dateOfDeath: trim(row.dateOfDeath),
-              dateOfIntimation: trim(row.dateOfIntimation || timestamp.split('T')[0]),
-              dueDateLastPayment: trim(row.dueDateLastPayment),
+              riskDate: parseDate(row.riskDate),
+              dateOfDeath: parseDate(row.dateOfDeath),
+              dateOfIntimation: parseDate(row.dateOfIntimation || timestamp.split('T')[0]),
+              dueDateLastPayment: parseDate(row.dueDateLastPayment),
               mode: (trim(row.mode).toUpperCase() || 'YLY') as any,
               age: cleanNumber(row.age),
               gender: (trim(row.gender).charAt(0).toUpperCase() || 'M') as any,
@@ -164,17 +269,17 @@ export const BulkImport: React.FC = () => {
               netAmount: cleanNumber(row.netAmount),
               
               checkNo: trim(row.checkNo),
-              checkDate: trim(row.checkDate),
-              checkDispatchDate: trim(row.checkDispatchDate),
+              checkDate: parseDate(row.checkDate),
+              checkDispatchDate: parseDate(row.checkDispatchDate),
               beneficiaryName: trim(row.beneficiaryName),
               beneficiaryAccountNo: trim(row.accountNo),
               bankName: trim(row.bankName),
               branch: trim(row.branch),
               
               jvNo: trim(row.jvNo),
-              jvDate: trim(row.jvDate),
+              jvDate: parseDate(row.jvDate),
               pvNo: trim(row.pvNo),
-              pvDate: trim(row.pvDate),
+              pvDate: parseDate(row.pvDate),
               
               currentStage: (trim(row.currentStage).toUpperCase() || 'INTIMATION') as any,
               remarks: trim(row.remarks || 'Bulk Imported'),
